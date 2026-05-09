@@ -1,4 +1,5 @@
 import os
+import uuid
 from flask import Flask, render_template, request, send_from_directory, jsonify
 import yt_dlp
 
@@ -12,7 +13,6 @@ if not os.path.exists(DOWNLOAD_FOLDER):
 def get_info():
     data = request.json
     video_url = data.get('link')
-    if not video_url: return jsonify({'error': 'vazio'}), 400
     try:
         ydl_opts = {'quiet': True, 'noplaylist': True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -23,22 +23,39 @@ def get_info():
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
+        # Pega o link do campo 'link' do HTML
         video_url = request.form.get('link')
-        if not video_url: return "Erro: URL vazia", 400
+        if not video_url:
+            return "Erro: URL vazia. O formulário não enviou o link.", 400
 
         try:
+            # Nome único para evitar erros de caracteres especiais no servidor
+            id_unico = str(uuid.uuid4())
+            
             ydl_opts = {
-                # FORÇA O FORMATO MP4 PARA O VÍDEO ABRIR EM QUALQUER CELULAR
-                'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-                'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(title)s.%(ext)s'),
+                # Força o melhor formato MP4 disponível
+                'format': 'best[ext=mp4]/best',
+                'outtmpl': os.path.join(DOWNLOAD_FOLDER, f'{id_unico}.%(ext)s'),
                 'noplaylist': True,
                 'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/115.0.0.0 Safari/537.36',
             }
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(video_url, download=True)
-                path = ydl.prepare_filename(info)
-                return send_from_directory(DOWNLOAD_FOLDER, os.path.basename(path), as_attachment=True)
+                # Nome do arquivo físico no servidor
+                filename = f"{id_unico}.mp4"
+                
+                # Nome que o usuário verá ao salvar (limpo de símbolos)
+                display_name = "".join([c for c in info.get('title', 'video') if c.isalnum() or c==' ']).strip()
+                display_name = f"{display_name}.mp4"
+                
+                return send_from_directory(
+                    DOWNLOAD_FOLDER, 
+                    filename, 
+                    as_attachment=True,
+                    download_name=display_name,
+                    mimetype='video/mp4'
+                )
         except Exception as e:
             return f"Erro: {str(e)}", 500
             
